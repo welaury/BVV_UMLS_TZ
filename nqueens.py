@@ -1,118 +1,135 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import random
-import math
 
-'''
-Данное решение должно расставлять ферзей без пересечений по вертикали и горизонтали.
-Однако до конца программа этот процесс не доводит (расставляет 5 ферзей, на большем кол-ве улетает в бесконечный цикл).
-Я отправил это решение, т.к. возможно вы укажете на проблему и прочие недочеты, для этого, я так понял, и установлен мягкий дедлайн.
-'''
 
 class Solver_8_queens:
-    pop_size = 10
-    board_size = 64
-    cross_prob = 0.5
-    mut_prob = 0.2
-    func_val = np.zeros(pop_size, dtype = np.uint8)
-    func_val_next = np.zeros(pop_size, dtype=np.uint8)
-    population = np.zeros((pop_size, board_size), dtype = np.uint8)
-    elite_hromosom = np.zeros((pop_size, board_size), dtype = np.uint8)
-    func_p = np.zeros(pop_size, dtype=np.uint8)
-    next_generations = np.zeros((pop_size, board_size),dtype=np.uint8)
 
-    def __init__(self, pop_size=10,cross_prob = 0.5, mut_prob=0.2):
+    pop_size = 180
+    board_width = 8
+    cross_prob = 0.55
+    mut_prob = 0.35
+
+    def __init__(self, pop_size=180, cross_prob=0.55, mut_prob=0.35):
         self.pop_size = pop_size
         self.cross_prob = cross_prob
         self.mut_prob = mut_prob
-    def solve(self):
-        self.gen_pop()
-        self.fit_func_pop()
-        while np.max(self.get_func_val()) < 16:
-            self.wheel()
-            self.gen_next_gen()
-            self.do_mut()
-            self.fit_func_next()
-            self.gen_best()
-        return self.get_in()
 
+    def solve(self, min_fitness, max_epochs):
+        population = self.generate_population()
 
-    def gen_pop(self):
-        for hromosom in self.population:
-            sum_array_element = 0
-            while sum_array_element < int(math.sqrt(self.board_size)):
-                hromosom[random.randrange(0, self.board_size - 1, 1)] = 1
-                sum_array_element = np.sum(hromosom)
+        fit_func_in = self.fit_func(population)
 
-    def get_in(self):
-        return self.population
+        epoch = 0
 
-    def fit_func_pop(self):
-        for index, hromosom in enumerate(self.population):
-            value = 0
-            board = hromosom.reshape(int(math.sqrt(self.board_size)), int(math.sqrt(self.board_size)))
-            for x in range(0, int(math.sqrt(self.board_size))):
-                if (np.sum(board[:, x]) == 1): value += 1
-                if (np.sum(board[x, :]) == 1): value += 1
-            self.func_val[index] = value
+        while (np.max(fit_func_in) < min_fitness):
+            if np.max(fit_func_in) >= min_fitness: break
 
-    def fit_func_next(self):
-        for index, hromosom in enumerate(self.next_generations):
-            value = 0
-            board = hromosom.reshape(int(math.sqrt(self.board_size)), int(math.sqrt(self.board_size)))
-            for x in range(0, int(math.sqrt(self.board_size))):
-                if (np.sum(board[:, x]) == 1) and (np.sum(board[x, :]) == 1): value += 1
-            self.func_val_next[index] = value
+            parent_pull = self.reproduction(fit_func_in, population)
+            parent_pull = np.random.permutation(parent_pull)
+            parent_fit_func = self.fit_func(parent_pull)
 
-    def wheel(self):
-        for index, hromosom in enumerate(self.func_val):
-            self.func_p[index] = round(self.func_val[index] / np.sum(self.func_val) * 100)
+            crossingover_out = self.crossingover(parent_pull)
+            crossingover_out = self.mutation(crossingover_out)
+            fit_func_cross = self.fit_func(crossingover_out)
+
+            population = self.reduction(parent_pull, crossingover_out, parent_fit_func, fit_func_cross)
+            fit_func_in = self.fit_func(population)
+
+            epoch+=1
+            if epoch == max_epochs: break
+
+        visualization = self.visual(population[self.pop_size-1])
+
+        return max(fit_func_in), epoch, visualization
+
+    def generate_population(self):
+        population = np.zeros((self.pop_size, self.board_width), dtype=np.uint8)
+
+        for hromosom in population:
+            for position in range(len(hromosom)):
+                hromosom[position] = random.randrange(0, self.board_width, 1)
+
+        return population
+
+    def fit_func(self, population):
+        fit_func_result = np.zeros(len(population), dtype = np.uint64)
+
+        for index, hromosom in enumerate(population):
+            #Вертикаль
+            unique, counts = np.unique(hromosom, return_counts=True)
+            unique_match, counts_match = np.unique(counts, return_counts=True)
+            fit_func_result[index] += counts_match[0]*2
+
+            # Диагонали
+            for x in range(0,len(hromosom)):
+                for y in range(0, len(hromosom)):
+                    if int(abs(x - y)) != int(abs(hromosom[x] - hromosom[y])):
+                        fit_func_result[index] += 1
+
+        return fit_func_result
+
+    def reproduction(self, fit_func, population):
+        func_p = np.zeros(len(population), dtype = np.uint8)
+        parent_pull = np.zeros((len(population), self.board_width), dtype=np.uint8)
+
+        for index, hromosom in enumerate(fit_func):
+            func_p[index] = round(fit_func[index] / np.sum(fit_func) * 100)
+
         wheel = []
-        for x in range(0, self.pop_size):
-            for _ in range(0, self.func_p[x]):
+
+        for x in range(0, len(population)):
+            for _ in range(0, func_p[x]):
                 wheel.append(x)
 
-        for x in range(0, self.pop_size):
-            self.elite_hromosom[x] = self.population[wheel[random.randrange(0, len(wheel), 1)]]
+        for x in range(0, len(population)):
+            parent_pull[x] = population[wheel[random.randrange(0, len(wheel), 1)]]
 
-    def gen_next_gen(self):
-        self.next_generations = self.population
-        for x in range(0, int(self.pop_size / 2)):
+        return parent_pull
+
+    def crossingover(self, parent_pull):
+        crossingover_out = np.zeros((len(parent_pull), self.board_width), dtype=np.uint8)
+
+        for x in range(0, int(len(parent_pull)/ 2)):
             if random.randrange(0, 100, 1) < self.cross_prob * 100:
-                id_first = random.randrange(0, len(self.elite_hromosom), 1)
-                id_second = random.randrange(0, len(self.elite_hromosom), 1)
-                first_parent = self.elite_hromosom[id_first]
-                second_parent = self.elite_hromosom[id_second]
+                first_parent = parent_pull[x]
+                second_parent = parent_pull[int(len(parent_pull)/ 2 - 1 - x)]
 
-                while id_first == id_second:
-                    id_second = random.randrange(0, len(self.elite_hromosom), 1)
-                    second_parent = self.elite_hromosom[id_second]
+                k_point = random.randrange(1, self.board_width - 1, 1)
 
-                k_point = random.randrange(1, self.board_size - 1, 1)
+                crossingover_out[x] = np.concatenate((first_parent[:k_point], second_parent[k_point:]))
+                crossingover_out[int(len(parent_pull)/ 2 - 1 - x)] = np.concatenate((second_parent[:k_point], first_parent[k_point:]))
 
-                self.next_generations[x] = np.concatenate((first_parent[:k_point], second_parent[k_point:]))
-                self.next_generations[int(self.pop_size - 1 - x)] = np.concatenate((second_parent[:k_point], first_parent[k_point:]))
+        return crossingover_out
 
-    def do_mut(self):
-        for hromosom in self.next_generations:
-            if random.randrange(0, 100, 1) < self.mut_prob*100:
-                k_point = random.randrange(0, self.board_size, 1)
-                if hromosom[k_point] == 1:
-                    hromosom[k_point] = 0
-                    other = random.randrange(0, self.board_size, 1)
-                    while hromosom[other] == 1:
-                        if hromosom[other] == 1: other = random.randrange(0, self.board_size, 1)
-                        else: hromosom[other] = 1
-                else:
-                    hromosom[k_point] = 1
-                    other = random.randrange(0, self.board_size, 1)
-                    while hromosom[other] == 0:
-                        if hromosom[other] == 0: other = random.randrange(0, self.board_size, 1)
-                        else:hromosom[other] = 0
-                        
-    def gen_best(self):
-        full_pop = np.vstack((self.population,self.next_generations))
-        full_func_val = np.concatenate((self.func_val,self.func_val_next))
-        full_pop = full_pop[full_func_val.argsort()]
-        self.population = full_pop[:10]
+    def mutation(self, crossingover_out):
+        for hromosom in crossingover_out:
+            if random.randrange(0, 100, 1) < self.mut_prob * 100:
+                hromosom[random.randrange(0, self.board_width, 1)] = random.randrange(0, self.board_width, 1)
 
+        return crossingover_out
+
+    def reduction(self, population, crossingover_out, fit_func_in, fit_func_cross):
+        full_hromosoms = np.vstack((population,crossingover_out))
+        full_func_val = np.concatenate((fit_func_in, fit_func_cross))
+        full_hromosoms = full_hromosoms[full_func_val.argsort()]
+
+        return full_hromosoms[len(population):]
+
+    def visual(self, hromosom):
+        visual_string = ''
+        for x in range(0,len(hromosom)):
+            visual_string += '+'*len(hromosom)
+
+        visual_array = list(visual_string)
+        for x in range(0,len(hromosom)):
+            visual_array[len(hromosom)*x + hromosom[x]] = 'Q'
+
+        bias = 0
+        for x in range(1,len(hromosom)):
+            visual_array.insert(len(hromosom)*x+bias,'\n')
+            bias+=1
+
+        visual_string = ''.join(visual_array)
+
+        return visual_string
