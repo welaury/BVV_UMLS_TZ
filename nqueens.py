@@ -15,7 +15,7 @@ class Solver_8_queens:
         self.cross_prob = cross_prob
         self.mut_prob = mut_prob
 
-    def solve(self, min_fitness, max_epochs):
+    def solve(self, min_fitness = 72, max_epochs = 300):
         population = self.generate_population()
 
         fit_func_in = self.fit_func(population)
